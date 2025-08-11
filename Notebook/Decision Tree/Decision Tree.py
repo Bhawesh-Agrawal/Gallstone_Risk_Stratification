@@ -80,9 +80,9 @@ def evaluate_dt(X, y_true, model, plot_dir=None, model_name="DT_Base"):
 
     metrics = {
         "accuracy": accuracy_score(y_true, labels),
-        "precision": precision_score(y_true, labels),
-        "recall": recall_score(y_true, labels),
-        "f1_score": f1_score(y_true, labels),
+        "precision": precision_score(y_true, labels, pos_label = 0),
+        "recall": recall_score(y_true, labels, pos_label = 0),
+        "f1_score": f1_score(y_true, labels, pos_label = 0),
         "roc_auc_score": roc_auc_score(y_true, probs),
     }
 
@@ -218,16 +218,16 @@ def featured_dataset(data):
 #   MAIN
 # =========================
 if __name__ == "__main__":
-    data = pd.read_csv('/home/bhawesh/Programming/Capstone Project/Dataset/gallstone_.csv')
+    data = pd.read_csv('https://raw.githubusercontent.com/Bhawesh-Agrawal/Gallstone_Risk_Stratification/master/Dataset/gallstone_.csv')
 
     results_dir = "results_dt"
     metrics_file = os.path.join(results_dir, "metrics.csv")
 
     # ORIGINAL DATASET BASE TRAINING
-    # X_train, X_test, y_train, y_test = original_dataset(data)
-    # dt = train_base_dt(X_train, y_train)
-    # metrics = evaluate_dt(X_test, y_test, dt, results_dir, "DT_V1")
-    # save_metrics(metrics, metrics_file, "DT_V1")
+    #X_train, X_test, y_train, y_test = original_dataset(data)
+    #dt = train_base_dt(X_train, y_train)
+    #metrics = evaluate_dt(X_test, y_test, dt, results_dir, "DT_V1")
+    #save_metrics(metrics, metrics_file, "DT_V1")
 
     # FEATURED DATASET BASE TRAINING
     #X_train, X_test, y_train, y_test = featured_dataset(data)

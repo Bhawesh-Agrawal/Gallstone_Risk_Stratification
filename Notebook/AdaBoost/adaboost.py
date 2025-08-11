@@ -4,56 +4,56 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import (
     f1_score, precision_score, recall_score, accuracy_score,
-    roc_auc_score, roc_curve, confusion_matrix, classification_report
+    roc_auc_score, roc_curve, confusion_matrix, classification_report,
+    make_scorer
 )
 from datetime import datetime
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier
 from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeClassifier
 
 
 # =========================
-#   TRAIN BASE RANDOM FOREST
+#   TRAIN BASE ADABOOST
 # =========================
-def train_base_rf(X, y):
-    rf = RandomForestClassifier(random_state=42, n_jobs=-1)
-    rf.fit(X, y)
-    return rf
+def train_base_ab(X, y):
+    ab = AdaBoostClassifier(random_state=42)
+    ab.fit(X, y)
+    return ab
 
 
 # =========================
-#   TRAIN RF WITH GRID SEARCH
+#   TRAIN ADABOOST WITH GRID SEARCH
 # =========================
-def train_rf_gridsearch_smart(X_train, y_train):
-    # Parameter grid (balanced between thorough search and speed)
+def train_ab_gridsearch_smart(X_train, y_train):
+    # Use estimator__max_depth to tune base estimator's depth properly
     param_grid = {
-        "n_estimators": [100, 200, 500],
-        "criterion": ["gini", "entropy", "log_loss"],
-        "max_depth": [None, 10, 20, 30],
-        "min_samples_split": [2, 5, 10],
-        "min_samples_leaf": [1, 2, 4],
-        "class_weight": [None, "balanced"]
+        "n_estimators": [50, 100, 200, 300],
+        "learning_rate": [0.01, 0.05, 0.1, 0.5, 1],  # include default SAMME.R
+        "estimator": [DecisionTreeClassifier()],  # single base estimator object
+        "estimator__max_depth": [1, 2, 3]
     }
 
-    # Stratified CV
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-    # Multiple metrics, optimize for f1
+    # Define scorers explicitly with pos_label=0 (positive class)
     scoring = {
-        "f1": "f1",
-        "precision": "precision",
-        "recall": "recall",
-        "roc_auc": "roc_auc"
+        "f1": make_scorer(f1_score, pos_label=0),
+        "precision": make_scorer(precision_score, pos_label=0),
+        "recall": make_scorer(recall_score, pos_label=0),
+        "roc_auc": make_scorer(roc_auc_score),
+        "accuracy": "accuracy"
     }
 
     grid_search = GridSearchCV(
-        estimator=RandomForestClassifier(random_state=42, n_jobs=-1),
+        estimator=AdaBoostClassifier(random_state=42),
         param_grid=param_grid,
         scoring=scoring,
-        refit="f1",
+        refit="f1",  # optimize for f1 of positive class=0
         cv=cv,
         n_jobs=-1,
-        verbose=1
+        verbose=2
     )
 
     grid_search.fit(X_train, y_train)
@@ -67,23 +67,26 @@ def train_rf_gridsearch_smart(X_train, y_train):
 
 
 # =========================
-#   EVALUATION
+#   EVALUATE ADABOOST
 # =========================
-def evaluate_rf(X, y_true, model, plot_dir=None, model_name="RF_Base"):
-    probs = model.predict_proba(X)[:, 1]
-    labels = (probs >= 0.5).astype(int)
+def evaluate_model(X, y_true, model, plot_dir=None, model_name="AdaBoost", pos_label=0):
+    # Get probs of positive class 0 (column 0)
+    probs = model.predict_proba(X)[:, pos_label]
+    labels = (probs < 0.5).astype(int)
 
     metrics = {
         "accuracy": accuracy_score(y_true, labels),
-        "precision": precision_score(y_true, labels, pos_label=0),
-        "recall": recall_score(y_true, labels, pos_label=0),
-        "f1_score": f1_score(y_true, labels, pos_label=0),
+        "precision": precision_score(y_true, labels, pos_label=pos_label),
+        "recall": recall_score(y_true, labels, pos_label=pos_label),
+        "f1_score": f1_score(y_true, labels, pos_label=pos_label),
         "roc_auc_score": roc_auc_score(y_true, probs),
     }
 
     cm = confusion_matrix(y_true, labels)
     metrics["confusion_matrix"] = cm.tolist()
-    metrics["classification_report"] = classification_report(y_true, labels, output_dict=True, zero_division=0)
+    metrics["classification_report"] = classification_report(
+        y_true, labels, output_dict=True, zero_division=0
+    )
 
     fpr, tpr, _ = roc_curve(y_true, probs)
     metrics["roc_curve"] = {"fpr": fpr.tolist(), "tpr": tpr.tolist()}
@@ -130,7 +133,7 @@ def save_metrics(metrics, file_path, model_name):
 
 
 # =========================
-#   FEATURE IMPORTANCE PLOT
+#   FEATURE IMPORTANCE
 # =========================
 def plot_feature_importance(model, X_train, plot_dir, model_name):
     importances = model.feature_importances_
@@ -151,13 +154,16 @@ def plot_feature_importance(model, X_train, plot_dir, model_name):
     return importance_df
 
 
-# =======================
+# =========================
 #   DATASET FUNCTIONS
-# =======================
+# =========================
 def original_dataset(data):
     df = data.copy()
     X = df.drop("Gallstone Status", axis=1)
     y = df["Gallstone Status"]
+
+    # Verify categorical columns are numeric (if not, encode here)
+    # Assuming your categorical cols are already numeric or encoded
 
     numeric_cols = [
         'Height', 'Weight', 'Body Mass Index (BMI)', 'Total Body Water (TBW)',
@@ -227,8 +233,7 @@ def featured_dataset(data):
     X_train[numeric_cols] = scaler.fit_transform(X_train[numeric_cols])
     X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])
 
-    return X_train, X_test, y_train, y_test, feature_cols
-
+    return X_train, X_test, y_train, y_test
 
 # =========================
 #   MAIN
@@ -236,45 +241,45 @@ def featured_dataset(data):
 if __name__ == "__main__":
     data = pd.read_csv('https://raw.githubusercontent.com/Bhawesh-Agrawal/Gallstone_Risk_Stratification/master/Dataset/gallstone_.csv')
 
-    results_dir = "results_rf"
+    results_dir = "results_ab"
     metrics_file = os.path.join(results_dir, "metrics.csv")
 
     # ORIGINAL DATASET
     #X_train, X_test, y_train, y_test = original_dataset(data)
-    #rf = train_base_rf(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, rf,  plot_dir=results_dir, model_name="RF_V1")
-    #save_metrics(metrics, metrics_file, "RF_V1")
-    #feature_importance_df = plot_feature_importance(rf, X_train, results_dir, model_name="RF_V1")
+    #adaboost = train_base_ab(X_train, y_train)
+    #metrics = evaluate_model(X_test, y_test, adaboost,  plot_dir=results_dir, model_name="ad_V1")
+    #save_metrics(metrics, metrics_file, "ad_V1")
+    #feature_importance_df = plot_feature_importance(adaboost, X_train, results_dir, model_name="ad_V1")
 
     # Featured DATASET
-    #X_train, X_test, y_train, y_test, feature_cols = featured_dataset(data)
-    #rf = train_base_rf(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, rf, plot_dir=results_dir, model_name="RF_V2")
-    #save_metrics(metrics, metrics_file, "RF_V2")
-    #feature_importance_df = plot_feature_importance(rf, X_train, results_dir, model_name="RF_V2")
+    #X_train, X_test, y_train, y_test = featured_dataset(data)
+    #adaboost = train_base_ab(X_train, y_train)
+    #metrics = evaluate_model(X_test, y_test, adaboost, plot_dir=results_dir, model_name="ad_V2")
+    #save_metrics(metrics, metrics_file, "ad_V2")
+    #feature_importance_df = plot_feature_importance(adaboost, X_train, results_dir, model_name="ad_V2")
 
     # ORIGINAL DATASET (Grid Search)
-   # X_train, X_test, y_train, y_test = original_dataset(data)
-    #best_model, best_params, best_score, cv_results = train_rf_gridsearch_smart(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, best_model, plot_dir=results_dir, model_name="RF_V3")
+    #X_train, X_test, y_train, y_test = original_dataset(data)
+    #best_model, best_params, best_score, cv_results = train_ab_gridsearch_smart(X_train, y_train)
+    #metrics = evaluate_model(X_test, y_test, best_model, plot_dir=results_dir, model_name="ad_V3")
     #metrics["best_params"] = best_params
     #metrics["best_cv_score"] = best_score
-    #save_metrics(metrics, metrics_file, "RF_V3")
+    #save_metrics(metrics, metrics_file, "ad_V3")
 
     # Plot Feature Importance
-    #feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "RF_V3")
+    #feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "ad_V3")
 
 
     # FEATURED DATASET (Grid Search)
-    X_train, X_test, y_train, y_test, feature_cols = featured_dataset(data)
-    best_model, best_params, best_score, cv_results = train_rf_gridsearch_smart(X_train, y_train)
-    metrics = evaluate_rf(X_test, y_test, best_model, plot_dir=results_dir, model_name="RF_V4")
+    X_train, X_test, y_train, y_test = featured_dataset(data)
+    best_model, best_params, best_score, cv_results = train_ab_gridsearch_smart(X_train, y_train)
+    metrics = evaluate_model(X_test, y_test, best_model, plot_dir=results_dir, model_name="ad_V4")
     metrics["best_params"] = best_params
     metrics["best_cv_score"] = best_score
-    save_metrics(metrics, metrics_file, "RF_V4")
+    save_metrics(metrics, metrics_file, "ad_V4")
 
     # Plot Feature Importance
-    feature_importance_df = plot_feature_importance(best_model,X_train, results_dir, "RF_V4")
+    feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "ad_v4")
 
-    print("Random Forest metrics saved:", metrics)
+    print("AdaBoost metrics saved:", metrics)
     print("\nTop Features:\n", feature_importance_df.head(10))

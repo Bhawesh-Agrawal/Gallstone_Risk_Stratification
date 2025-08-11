@@ -45,15 +45,15 @@ def evaluate_svm(X, y_true, model, plot_dir=None, model_name="SVM_Base"):
 
     metrics = {
         'accuracy': accuracy_score(y_true, labels),
-        'precision': precision_score(y_true, labels),
-        'recall': recall_score(y_true, labels),
-        'f1_score': f1_score(y_true, labels),
+        'precision': precision_score(y_true, labels, pos_label=0),
+        'recall': recall_score(y_true, labels, pos_label=0),
+        'f1_score': f1_score(y_true, labels, pos_label=0),
         'roc_auc_score': roc_auc_score(y_true, probs),
     }
 
     cm = confusion_matrix(y_true, labels)
     metrics['confusion_matrix'] = cm.tolist()
-    metrics['classification_report'] = classification_report(y_true, labels, output_dict=True)
+    metrics['classification_report'] = classification_report(y_true, labels, output_dict=True, zero_division=0)
 
     fpr, tpr, _ = roc_curve(y_true, probs)
     metrics['roc_curve'] = {'fpr': fpr.tolist(), 'tpr': tpr.tolist()}
@@ -185,35 +185,35 @@ def featured_dataset(data):
 #   MAIN
 # =========================
 if __name__ == "__main__":
-    data = pd.read_csv('/home/bhawesh/Programming/Capstone Project/Dataset/gallstone_.csv')
+    data = pd.read_csv('https://raw.githubusercontent.com/Bhawesh-Agrawal/Gallstone_Risk_Stratification/master/Dataset/gallstone_.csv')
 
     results_dir = "results_svm"
     metrics_file = os.path.join(results_dir, "metrics.csv")
 
     # ORIGINAL DATASET TRAINING
     #X_train, X_test, y_train, y_test = original_dataset(data)
-    # model = train_base_svm(X_train, y_train)
-    # metrics = evaluate_svm(X_test, y_test, model, plot_dir=results_dir, model_name="SVM_V1")
-    # save_metrics(metrics, metrics_file, "SVM_V1")
+    #model = train_base_svm(X_train, y_train)
+    #metrics = evaluate_svm(X_test, y_test, model, plot_dir=results_dir, model_name="SVM_Original")
+    #save_metrics(metrics, metrics_file, "SVM_Original")
 
     # FEATURED DATASET TRAINING
     X_train, X_test, y_train, y_test = featured_dataset(data)
     #model = train_base_svm(X_train, y_train)
-    #metrics = evaluate_svm(X_test, y_test, model, plot_dir=results_dir, model_name="SVM_V2")
-    #save_metrics(metrics, metrics_file, "SVM_V2")
+    #metrics = evaluate_svm(X_test, y_test, model, plot_dir=results_dir, model_name="SVM_Featured")
+    #save_metrics(metrics, metrics_file, "SVM_Featured")
 
     # ORIGINAL DATASET TRAINING (Grid Search)
     #best_model, best_params, best_score = train_svm_gridsearch(X_train, y_train)
-    #metrics = evaluate_svm(X_test, y_test, best_model, plot_dir=results_dir, model_name="SVM_V3")
+    #metrics = evaluate_svm(X_test, y_test, best_model, plot_dir=results_dir, model_name="SVM_Original_grid")
     #metrics["best_params"] = best_params
     #metrics["best_cv_score"] = best_score
-    #save_metrics(metrics, metrics_file, "SVM_V3")
+    #save_metrics(metrics, metrics_file, "SVM_Original_grid")
 
     # FEATURED DATASET TRAINING (Grid Search)
     best_model, best_params, best_score = train_svm_gridsearch(X_train, y_train)
-    metrics = evaluate_svm(X_test, y_test, best_model, plot_dir=results_dir, model_name="SVM_V4")
+    metrics = evaluate_svm(X_test, y_test, best_model, plot_dir=results_dir, model_name="SVM_Featured_grid")
     metrics["best_params"] = best_params
     metrics["best_cv_score"] = best_score
-    save_metrics(metrics, metrics_file, "SVM_V4")
+    save_metrics(metrics, metrics_file, "SVM_Featured_grid")
 
     print("Base SVM metrics saved:", metrics)

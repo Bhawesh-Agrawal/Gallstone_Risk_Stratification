@@ -44,15 +44,15 @@ def evaluate_nb(X, y_true, model, plot_dir=None, model_name="NB_Base"):
 
     metrics = {
         'accuracy': accuracy_score(y_true, labels),
-        'precision': precision_score(y_true, labels),
-        'recall': recall_score(y_true, labels),
-        'f1_score': f1_score(y_true, labels),
+        'precision': precision_score(y_true, labels, pos_label=0),
+        'recall': recall_score(y_true, labels, pos_label=0),
+        'f1_score': f1_score(y_true, labels, pos_label=0),
         'roc_auc_score': roc_auc_score(y_true, probs),
     }
 
     cm = confusion_matrix(y_true, labels)
     metrics['confusion_matrix'] = cm.tolist()
-    metrics['classification_report'] = classification_report(y_true, labels, output_dict=True)
+    metrics['classification_report'] = classification_report(y_true, labels, output_dict=True, zero_division=0)
 
     fpr, tpr, _ = roc_curve(y_true, probs)
     metrics['roc_curve'] = {'fpr': fpr.tolist(), 'tpr': tpr.tolist()}
@@ -182,7 +182,7 @@ def featured_dataset(data):
 #   MAIN
 # =========================
 if __name__ == "__main__":
-    data = pd.read_csv('/home/bhawesh/Programming/Capstone Project/Dataset/gallstone_.csv')
+    data = pd.read_csv('https://raw.githubusercontent.com/Bhawesh-Agrawal/Gallstone_Risk_Stratification/master/Dataset/gallstone_.csv')
 
     results_dir = "results_nb"
     metrics_file = os.path.join(results_dir, "metrics.csv")
@@ -190,22 +190,22 @@ if __name__ == "__main__":
     #ORIGINAL DATASET
     #X_train, X_test, y_train, y_test = original_dataset(data)
     #nb = train_base_nb(X_train, y_train)
-    #metrics = evaluate_nb(X_test, y_test, nb, plot_dir=results_dir, model_name= "NB_V1")
-    #save_metrics(metrics, metrics_file, model_name="NB_V1")
+    #metrics = evaluate_nb(X_test, y_test, nb, plot_dir=results_dir, model_name= "NB_Original")
+    #save_metrics(metrics, metrics_file, model_name="NB_Original")
 
     # FEATURED DATASET
     #X_train, X_test, y_train, y_test = featured_dataset(data)
     #nb = train_base_nb(X_train, y_train)
-    #metrics = evaluate_nb(X_test, y_test, nb, plot_dir=results_dir, model_name="NB_V2")
-    #save_metrics(metrics, metrics_file, model_name = "NB_V2")
+    #metrics = evaluate_nb(X_test, y_test, nb, plot_dir=results_dir, model_name="NB_Featured")
+    #save_metrics(metrics, metrics_file, model_name = "NB_Featured")
 
     # ORIGINAL DATASET TRAINING (Grid Search)
     #X_train, X_test, y_train, y_test = featured_dataset(data)
     #best_model, best_params, best_score = train_nb_gridsearch(X_train, y_train)
-    #metrics = evaluate_nb(X_test, y_test, best_model, plot_dir=results_dir, model_name="NB_V3")
+    #metrics = evaluate_nb(X_test, y_test, best_model, plot_dir=results_dir, model_name="NB_Original_grid")
     #metrics["best_params"] = best_params
     #metrics["best_cv_score"] = best_score
-    #save_metrics(metrics, metrics_file, "NB_V3")
+    #save_metrics(metrics, metrics_file, "NB_Original_grid")
 
     # FEATURED DATASET TRAINING (Grid Search)
     X_train, X_test, y_train, y_test = featured_dataset(data)
