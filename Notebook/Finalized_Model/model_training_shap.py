@@ -11,35 +11,40 @@ from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKF
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 import joblib
+import json
 
 
 # =========================
-#   TRAIN BASE RANDOM FOREST
+#  TRAIN BASE RANDOM FOREST
 # =========================
 def train_base_rf(X, y):
+    """Trains a basic RandomForestClassifier."""
     rf = RandomForestClassifier(random_state=42, n_jobs=-1)
     rf.fit(X, y)
     return rf
 
 
 # =========================
-#   TRAIN RF WITH GRID SEARCH
+#  TRAIN RF WITH GRID SEARCH
 # =========================
 def train_rf_gridsearch_smart(X_train, y_train):
+    """
+    Trains a RandomForestClassifier using GridSearchCV to find the best hyperparameters.
+    """
     # Parameter grid (balanced between thorough search and speed)
     param_grid = {
         "n_estimators": [100, 200, 500],
-        "criterion": ["gini", "entropy", "log_loss"],
-        "max_depth": [None, 10, 20, 30],
-        "min_samples_split": [2, 5, 10],
-        "min_samples_leaf": [1, 2, 4],
+        "criterion": ["gini", "entropy"],
+        "max_depth": [None, 10, 20],
+        "min_samples_split": [2, 5],
+        "min_samples_leaf": [1, 2],
         "class_weight": [None, "balanced"]
     }
 
-    # Stratified CV
+    # Stratified CV for robust evaluation
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-    # Multiple metrics, optimize for f1
+    # Define multiple scoring metrics, but optimize for f1-score
     scoring = {
         "f1": "f1",
         "precision": "precision",
@@ -68,9 +73,10 @@ def train_rf_gridsearch_smart(X_train, y_train):
 
 
 # =========================
-#   EVALUATION
+#  EVALUATION
 # =========================
 def evaluate_rf(X, y_true, model, plot_dir=None, model_name="RF_Base"):
+    """Evaluates the model and generates plots for ROC curve and confusion matrix."""
     probs = model.predict_proba(X)[:, 1]
     labels = (probs >= 0.5).astype(int)
 
@@ -116,9 +122,10 @@ def evaluate_rf(X, y_true, model, plot_dir=None, model_name="RF_Base"):
 
 
 # =========================
-#   SAVE METRICS
+#  SAVE METRICS
 # =========================
 def save_metrics(metrics, file_path, model_name):
+    """Saves evaluation metrics to a CSV file."""
     df = pd.DataFrame([metrics])
     df.insert(0, "model_name", model_name)
     df.insert(1, "timestamp", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
@@ -131,9 +138,10 @@ def save_metrics(metrics, file_path, model_name):
 
 
 # =========================
-#   FEATURE IMPORTANCE PLOT
+#  FEATURE IMPORTANCE PLOT
 # =========================
 def plot_feature_importance(model, X_train, plot_dir, model_name):
+    """Generates and saves a feature importance plot."""
     importances = model.feature_importances_
     feature_names = X_train.columns
     importance_df = pd.DataFrame({
@@ -142,7 +150,7 @@ def plot_feature_importance(model, X_train, plot_dir, model_name):
     }).sort_values(by="Importance", ascending=False)
 
     os.makedirs(plot_dir, exist_ok=True)
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 8))
     sns.barplot(x="Importance", y="Feature", data=importance_df, palette="viridis")
     plt.title(f"Feature Importance - {model_name}")
     plt.tight_layout()
@@ -153,9 +161,13 @@ def plot_feature_importance(model, X_train, plot_dir, model_name):
 
 
 # =======================
-#   DATASET FUNCTIONS
+#  DATASET FUNCTIONS
 # =======================
 def original_dataset(data):
+    """
+    Prepares the original dataset, splits it, scales numeric features,
+    and returns the scaler and feature lists for later use.
+    """
     df = data.copy()
     X = df.drop("Gallstone Status", axis=1)
     y = df["Gallstone Status"]
@@ -175,112 +187,74 @@ def original_dataset(data):
         "Age", "Gender", "Comorbidity", "Coronary Artery Disease (CAD)",
         "Hypothyroidism", "Hyperlipidemia", "Diabetes Mellitus (DM)"
     ]
+    
+    # Combine feature lists to get the final column order
+    feature_cols = categorical_cols + numeric_cols
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X[categorical_cols + numeric_cols], y, test_size=0.2, random_state=42
+        X[feature_cols], y, test_size=0.2, random_state=42, stratify=y
     )
 
+    # Initialize and fit the scaler ONLY on the training data
     scaler = StandardScaler()
     X_train[numeric_cols] = scaler.fit_transform(X_train[numeric_cols])
+    # Transform the test data using the same scaler
     X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])
 
-    return X_train, X_test, y_train, y_test
-
-
-def featured_dataset(data):
-    df = data.copy()
-
-    df['BMI_CRP_Product'] = df['Body Mass Index (BMI)'] * df['C-Reactive Protein (CRP)']
-    df['Muscle_Fat_Ratio'] = df['Muscle Mass (MM)'] / df['Total Fat Content (TFC)']
-
-    feature_cols = [
-        'Age', 'Gender', 'Comorbidity', 'Coronary Artery Disease (CAD)',
-        'Hypothyroidism', 'Hyperlipidemia', 'Diabetes Mellitus (DM)',
-        'Height', 'Weight', 'Body Mass Index (BMI)', 'Total Body Water (TBW)',
-        'Extracellular Water (ECW)', 'Extracellular Fluid/Total Body Water (ECF/TBW)',
-        'Obesity (%)', 'Bone Mass (BM)', 'Creatinine',
-        'Total Fat Content (TFC)', 'Visceral Fat Area (VFA)', 'Glucose',
-        'Total Cholesterol (TC)', 'Low Density Lipoprotein (LDL)',
-        'High Density Lipoprotein (HDL)', 'Triglyceride', 'Aspartat Aminotransferaz (AST)',
-        'C-Reactive Protein (CRP)', 'Vitamin D', 'BMI_CRP_Product', 'Muscle_Fat_Ratio'
-    ]
-
-    X = df[feature_cols]
-    y = df["Gallstone Status"]
-
-    numeric_cols = [
-        'Height', 'Weight', 'Body Mass Index (BMI)', 'Total Body Water (TBW)',
-        'Total Fat Content (TFC)', 'Visceral Fat Area (VFA)', 'Glucose',
-        'Total Cholesterol (TC)', 'Low Density Lipoprotein (LDL)',
-        'High Density Lipoprotein (HDL)', 'Triglyceride', 'Aspartat Aminotransferaz (AST)',
-        'C-Reactive Protein (CRP)', 'Vitamin D', 'BMI_CRP_Product', 'Muscle_Fat_Ratio'
-    ]
-    categorical_cols = [
-        'Age', 'Gender', 'Comorbidity', 'Coronary Artery Disease (CAD)',
-        'Hypothyroidism', 'Hyperlipidemia', 'Diabetes Mellitus (DM)'
-    ]
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-
-    scaler = StandardScaler()
-    X_train[numeric_cols] = scaler.fit_transform(X_train[numeric_cols])
-    X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])
-
-    return X_train, X_test, y_train, y_test, feature_cols
+    # Return the scaler and column lists along with the datasets
+    return X_train, X_test, y_train, y_test, scaler, feature_cols
 
 
 # =========================
-#   MAIN
+#  MAIN
 # =========================
 if __name__ == "__main__":
+    # Load data
     data = pd.read_csv('https://raw.githubusercontent.com/Bhawesh-Agrawal/Gallstone_Risk_Stratification/master/Dataset/gallstone_.csv')
 
+    # Define directory for results
     results_dir = "results_rf"
+    os.makedirs(results_dir, exist_ok=True)
     metrics_file = os.path.join(results_dir, "metrics.csv")
 
-    # ORIGINAL DATASET
-    #X_train, X_test, y_train, y_test = original_dataset(data)
-    #rf = train_base_rf(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, rf,  plot_dir=results_dir, model_name="RF_V1")
-    #save_metrics(metrics, metrics_file, "RF_V1")
-    #feature_importance_df = plot_feature_importance(rf, X_train, results_dir, model_name="RF_V1")
+    # --- TRAIN AND SAVE BEST MODEL ---
+    print("Preparing dataset...")
+    X_train, X_test, y_train, y_test, scaler, feature_cols = original_dataset(data)
 
-    # Featured DATASET
-    #X_train, X_test, y_train, y_test, feature_cols = featured_dataset(data)
-    #rf = train_base_rf(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, rf, plot_dir=results_dir, model_name="RF_V2")
-    #save_metrics(metrics, metrics_file, "RF_V2")
-    #feature_importance_df = plot_feature_importance(rf, X_train, results_dir, model_name="RF_V2")
-
-    # ORIGINAL DATASET (Grid Search)
-    X_train, X_test, y_train, y_test = original_dataset(data)
+    print("Starting GridSearchCV to find the best model...")
     best_model, best_params, best_score, cv_results = train_rf_gridsearch_smart(X_train, y_train)
-    #metrics = evaluate_rf(X_train, y_train, best_model, plot_dir=results_dir, model_name="RF_Best")
-    #metrics["best_params"] = best_params
-    #metrics["best_cv_score"] = best_score
-    #save_metrics(metrics, metrics_file, "RF_Best")
+    
+    print("\n--- Best Model Found ---")
+    print(f"Best F1-Score (CV): {best_score:.4f}")
+    print("Best Parameters:")
+    print(best_params)
 
-    # Plot Feature Importance
-    #feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "RF_V3")
+    # Evaluate the final model on the held-out test set
+    print("\nEvaluating the best model on the test set...")
+    metrics = evaluate_rf(X_test, y_test, best_model, plot_dir=results_dir, model_name="RF_Best_Final")
+    metrics["best_params"] = best_params
+    metrics["best_cv_score"] = best_score
+    save_metrics(metrics, metrics_file, "RF_Best_Final")
+    print("Evaluation metrics saved.")
 
+    # Plot and save feature importance for the best model
+    feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "RF_Best_Final")
+    print("Feature importance plot saved.")
+
+    # --- SAVE ARTIFACTS FOR PREDICTION ---
+    # Save the trained model
     model_path = os.path.join(results_dir, "rf_best_model.pkl")
     joblib.dump(best_model, model_path)
     print(f"✅ Model saved at: {model_path}")
 
+    # Save the scaler
+    scaler_path = os.path.join(results_dir, "scaler.pkl")
+    joblib.dump(scaler, scaler_path)
+    print(f"✅ Scaler saved at: {scaler_path}")
 
-    # FEATURED DATASET (Grid Search)
-    #X_train, X_test, y_train, y_test, feature_cols = featured_dataset(data)
-    #best_model, best_params, best_score, cv_results = train_rf_gridsearch_smart(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, best_model, plot_dir=results_dir, model_name="RF_V4")
-    #metrics["best_params"] = best_params
-    #metrics["best_cv_score"] = best_score
-    #save_metrics(metrics, metrics_file, "RF_V4")
+    # Save the feature column list
+    feature_cols_path = os.path.join(results_dir, "feature_cols.json")
+    with open(feature_cols_path, 'w') as f:
+        json.dump(feature_cols, f)
+    print(f"✅ Feature columns saved at: {feature_cols_path}")
 
-    # Plot Feature Importance
-    #feature_importance_df = plot_feature_importance(best_model,X_train, results_dir, "RF_V4")
-
-    #print("Random Forest metrics saved:", metrics)
-    #print("\nTop Features:\n", feature_importance_df.head(10))
-    print(best_model, best_params, best_score)

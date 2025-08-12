@@ -2,59 +2,64 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from datetime import datetime
 from sklearn.metrics import (
     f1_score, precision_score, recall_score, accuracy_score,
-    roc_auc_score, roc_curve, confusion_matrix, classification_report
+    roc_auc_score, roc_curve, confusion_matrix, classification_report,
+    make_scorer
 )
-from datetime import datetime
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-import joblib
+from xgboost import XGBClassifier
+
+# =========================
+#   TRAIN BASE XGBOOST
+# =========================
+def train_base_xgb(X, y):
+    xgb = XGBClassifier(
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric="logloss"
+    )
+    xgb.fit(X, y)
+    return xgb
 
 
 # =========================
-#   TRAIN BASE RANDOM FOREST
+#   TRAIN XGBOOST WITH GRID SEARCH
 # =========================
-def train_base_rf(X, y):
-    rf = RandomForestClassifier(random_state=42, n_jobs=-1)
-    rf.fit(X, y)
-    return rf
-
-
-# =========================
-#   TRAIN RF WITH GRID SEARCH
-# =========================
-def train_rf_gridsearch_smart(X_train, y_train):
-    # Parameter grid (balanced between thorough search and speed)
+def train_xgb_gridsearch_smart(X_train, y_train):
     param_grid = {
-        "n_estimators": [100, 200, 500],
-        "criterion": ["gini", "entropy", "log_loss"],
-        "max_depth": [None, 10, 20, 30],
-        "min_samples_split": [2, 5, 10],
-        "min_samples_leaf": [1, 2, 4],
-        "class_weight": [None, "balanced"]
+        "n_estimators": [100, 200, 300],
+        "max_depth": [2, 3, 5],
+        "learning_rate": [0.01, 0.05, 0.1, 0.3],
+        "subsample": [0.8, 1],
+        "colsample_bytree": [0.8, 1],
+        "gamma": [0, 1]
     }
 
-    # Stratified CV
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-    # Multiple metrics, optimize for f1
     scoring = {
-        "f1": "f1",
-        "precision": "precision",
-        "recall": "recall",
-        "roc_auc": "roc_auc"
+        "f1": make_scorer(f1_score, pos_label=0),
+        "precision": make_scorer(precision_score, pos_label=0),
+        "recall": make_scorer(recall_score, pos_label=0),
+        "roc_auc": make_scorer(roc_auc_score),
+        "accuracy": "accuracy"
     }
 
     grid_search = GridSearchCV(
-        estimator=RandomForestClassifier(random_state=42, n_jobs=-1),
+        estimator=XGBClassifier(
+            random_state=42,
+            use_label_encoder=False,
+            eval_metric="logloss"
+        ),
         param_grid=param_grid,
         scoring=scoring,
-        refit="f1",
+        refit="f1",  # optimize for f1 of positive class=0
         cv=cv,
         n_jobs=-1,
-        verbose=1
+        verbose=2
     )
 
     grid_search.fit(X_train, y_train)
@@ -68,23 +73,25 @@ def train_rf_gridsearch_smart(X_train, y_train):
 
 
 # =========================
-#   EVALUATION
+#   EVALUATE XGBOOST
 # =========================
-def evaluate_rf(X, y_true, model, plot_dir=None, model_name="RF_Base"):
-    probs = model.predict_proba(X)[:, 1]
-    labels = (probs >= 0.5).astype(int)
+def evaluate_model(X, y_true, model, plot_dir=None, model_name="XGBoost", pos_label=0):
+    probs = model.predict_proba(X)[:, pos_label]
+    labels = (probs < 0.5).astype(int)
 
     metrics = {
         "accuracy": accuracy_score(y_true, labels),
-        "precision": precision_score(y_true, labels, pos_label=0),
-        "recall": recall_score(y_true, labels, pos_label=0),
-        "f1_score": f1_score(y_true, labels, pos_label=0),
+        "precision": precision_score(y_true, labels, pos_label=pos_label),
+        "recall": recall_score(y_true, labels, pos_label=pos_label),
+        "f1_score": f1_score(y_true, labels, pos_label=pos_label),
         "roc_auc_score": roc_auc_score(y_true, probs),
     }
 
     cm = confusion_matrix(y_true, labels)
     metrics["confusion_matrix"] = cm.tolist()
-    metrics["classification_report"] = classification_report(y_true, labels, output_dict=True, zero_division=0)
+    metrics["classification_report"] = classification_report(
+        y_true, labels, output_dict=True, zero_division=0
+    )
 
     fpr, tpr, _ = roc_curve(y_true, probs)
     metrics["roc_curve"] = {"fpr": fpr.tolist(), "tpr": tpr.tolist()}
@@ -92,7 +99,6 @@ def evaluate_rf(X, y_true, model, plot_dir=None, model_name="RF_Base"):
     if plot_dir:
         os.makedirs(plot_dir, exist_ok=True)
 
-        # ROC Curve
         plt.figure()
         plt.plot(fpr, tpr, color="blue", lw=2, label=f'ROC (AUC = {metrics["roc_auc_score"]:.2f})')
         plt.plot([0, 1], [0, 1], color="red", lw=2, linestyle="--")
@@ -103,7 +109,6 @@ def evaluate_rf(X, y_true, model, plot_dir=None, model_name="RF_Base"):
         plt.savefig(os.path.join(plot_dir, f"{model_name}_ROC.png"))
         plt.close()
 
-        # Confusion Matrix
         plt.figure()
         sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False)
         plt.title(f"Confusion Matrix - {model_name}")
@@ -131,7 +136,7 @@ def save_metrics(metrics, file_path, model_name):
 
 
 # =========================
-#   FEATURE IMPORTANCE PLOT
+#   FEATURE IMPORTANCE
 # =========================
 def plot_feature_importance(model, X_train, plot_dir, model_name):
     importances = model.feature_importances_
@@ -152,16 +157,16 @@ def plot_feature_importance(model, X_train, plot_dir, model_name):
     return importance_df
 
 
-# =======================
+# =========================
 #   DATASET FUNCTIONS
-# =======================
+# =========================
 def original_dataset(data):
     df = data.copy()
     X = df.drop("Gallstone Status", axis=1)
     y = df["Gallstone Status"]
 
     numeric_cols = [
-        'Height', 'Weight', 'Body Mass Index (BMI)', 'Total Body Water (TBW)',
+        "Age", 'Height', 'Weight', 'Body Mass Index (BMI)', 'Total Body Water (TBW)',
         'Extracellular Water (ECW)', 'Intracellular Water (ICW)', 'Extracellular Fluid/Total Body Water (ECF/TBW)',
         'Total Body Fat Ratio (TBFR) (%)', 'Lean Mass (LM) (%)', 'Body Protein Content (Protein) (%)',
         'Visceral Fat Rating (VFR)', 'Bone Mass (BM)', 'Muscle Mass (MM)', 'Obesity (%)',
@@ -172,7 +177,7 @@ def original_dataset(data):
         'Glomerular Filtration Rate (GFR)', 'C-Reactive Protein (CRP)', 'Hemoglobin (HGB)', 'Vitamin D'
     ]
     categorical_cols = [
-        "Age", "Gender", "Comorbidity", "Coronary Artery Disease (CAD)",
+        "Gender", "Comorbidity", "Coronary Artery Disease (CAD)",
         "Hypothyroidism", "Hyperlipidemia", "Diabetes Mellitus (DM)"
     ]
 
@@ -189,7 +194,6 @@ def original_dataset(data):
 
 def featured_dataset(data):
     df = data.copy()
-
     df['BMI_CRP_Product'] = df['Body Mass Index (BMI)'] * df['C-Reactive Protein (CRP)']
     df['Muscle_Fat_Ratio'] = df['Muscle Mass (MM)'] / df['Total Fat Content (TFC)']
 
@@ -228,7 +232,7 @@ def featured_dataset(data):
     X_train[numeric_cols] = scaler.fit_transform(X_train[numeric_cols])
     X_test[numeric_cols] = scaler.transform(X_test[numeric_cols])
 
-    return X_train, X_test, y_train, y_test, feature_cols
+    return X_train, X_test, y_train, y_test
 
 
 # =========================
@@ -237,50 +241,42 @@ def featured_dataset(data):
 if __name__ == "__main__":
     data = pd.read_csv('https://raw.githubusercontent.com/Bhawesh-Agrawal/Gallstone_Risk_Stratification/master/Dataset/gallstone_.csv')
 
-    results_dir = "results_rf"
+    results_dir = "results_xgb"
     metrics_file = os.path.join(results_dir, "metrics.csv")
 
     # ORIGINAL DATASET
     #X_train, X_test, y_train, y_test = original_dataset(data)
-    #rf = train_base_rf(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, rf,  plot_dir=results_dir, model_name="RF_V1")
-    #save_metrics(metrics, metrics_file, "RF_V1")
-    #feature_importance_df = plot_feature_importance(rf, X_train, results_dir, model_name="RF_V1")
+    #xg = train_base_xgb(X_train, y_train)
+    #metrics = evaluate_model(X_test, y_test, xg, plot_dir = results_dir, model_name = "xgb_original")
+    #save_metrics(metrics, metrics_file, "xgb_original")
+    #feature_importance_df = plot_feature_importance(xg, X_train, results_dir, "xgb_original")
 
-    # Featured DATASET
-    #X_train, X_test, y_train, y_test, feature_cols = featured_dataset(data)
-    #rf = train_base_rf(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, rf, plot_dir=results_dir, model_name="RF_V2")
-    #save_metrics(metrics, metrics_file, "RF_V2")
-    #feature_importance_df = plot_feature_importance(rf, X_train, results_dir, model_name="RF_V2")
+    # FEATURED DATASET
+    #X_train, X_test, y_train, y_test = featured_dataset(data)
+    #xg = train_base_xgb(X_train, y_train)
+    #metrics = evaluate_model(X_test, y_test, xg, plot_dir = results_dir, model_name = "xgb_featured")
+    #save_metrics(metrics, metrics_file, "xgb_featured")
+    #feature_importance_df = plot_feature_importance(xg, X_train, results_dir, "xgb_original")
 
     # ORIGINAL DATASET (Grid Search)
-    X_train, X_test, y_train, y_test = original_dataset(data)
-    best_model, best_params, best_score, cv_results = train_rf_gridsearch_smart(X_train, y_train)
-    #metrics = evaluate_rf(X_train, y_train, best_model, plot_dir=results_dir, model_name="RF_Best")
+    #X_train, X_test, y_train, y_test = original_dataset(data)
+    #best_model, best_params, best_score, cv_results = train_xgb_gridsearch_smart(X_train, y_train)
+    #metrics = evaluate_model(X_test, y_test, best_model, plot_dir=results_dir, model_name="xgb_original_grid")
     #metrics["best_params"] = best_params
     #metrics["best_cv_score"] = best_score
-    #save_metrics(metrics, metrics_file, "RF_Best")
+    #save_metrics(metrics, metrics_file, "xgb_original_grid")
 
-    # Plot Feature Importance
-    #feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "RF_V3")
-
-    model_path = os.path.join(results_dir, "rf_best_model.pkl")
-    joblib.dump(best_model, model_path)
-    print(f"✅ Model saved at: {model_path}")
-
+    #feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "xgb_original_grid")
 
     # FEATURED DATASET (Grid Search)
-    #X_train, X_test, y_train, y_test, feature_cols = featured_dataset(data)
-    #best_model, best_params, best_score, cv_results = train_rf_gridsearch_smart(X_train, y_train)
-    #metrics = evaluate_rf(X_test, y_test, best_model, plot_dir=results_dir, model_name="RF_V4")
-    #metrics["best_params"] = best_params
-    #metrics["best_cv_score"] = best_score
-    #save_metrics(metrics, metrics_file, "RF_V4")
+    X_train, X_test, y_train, y_test = featured_dataset(data)
+    best_model, best_params, best_score, cv_results = train_xgb_gridsearch_smart(X_train, y_train)
+    metrics = evaluate_model(X_test, y_test, best_model, plot_dir=results_dir, model_name="xgb_featured_grid")
+    metrics["best_params"] = best_params
+    metrics["best_cv_score"] = best_score
+    save_metrics(metrics, metrics_file, "xgb_featured_grid")
 
-    # Plot Feature Importance
-    #feature_importance_df = plot_feature_importance(best_model,X_train, results_dir, "RF_V4")
+    feature_importance_df = plot_feature_importance(best_model, X_train, results_dir, "xgb_featured_grid")
 
-    #print("Random Forest metrics saved:", metrics)
-    #print("\nTop Features:\n", feature_importance_df.head(10))
-    print(best_model, best_params, best_score)
+    print("XGBoost metrics saved:", metrics)
+    print("\nTop Features:\n", feature_importance_df.head(10))
