@@ -17,7 +17,7 @@ class QAGenerator:
         if not api_key:
             raise ValueError("API key is required.")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+        self.model = genai.GenerativeModel('models/gemini-2.5-flash')
         print("Gemini API configured successfully for Q&A generation.")
 
     def generate_question_list(self, num_questions=300):
