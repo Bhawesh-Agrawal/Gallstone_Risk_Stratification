@@ -1,0 +1,31 @@
+# Ignore virtual environments
+.venv/
+env/
+venv/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore build/test artifacts
+*.log
+*.dat
+*.sqlite
+*.db
+
+# Ignore notebooks (optional)
+*.ipynb
+
+# Ignore local env files (use HF secrets instead!)
+.env
+*.env
+
+# Ignore Git files
+.git
+.gitignore
+
+# Ignore system files
+.DS_Store
+Thumbs.db
