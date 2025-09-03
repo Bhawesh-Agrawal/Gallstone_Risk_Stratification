@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+// --- Convex Imports (NEW) ---
+import { useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+// ----------------------------
 import type { LucideIcon } from "lucide-react";
 import {
   AlertCircle,
@@ -17,6 +21,7 @@ import {
   Download,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Id } from "../../../convex/_generated/dataModel"
 
 // -------------------- Field Definitions & Types --------------------
 const fieldDescriptions = {
@@ -166,6 +171,10 @@ export default function Predict(): React.ReactElement {
   const [jobId, setJobId] = useState<string | null>(null);
   const pollingRef = useRef<number | null>(null);
 
+  // --- Convex Action Hook (NEW) ---
+  const saveReport = useAction(api.report.saveReport);
+  // ---------------------------------
+
   const totalFields = useMemo(() => Object.keys(fieldDescriptions).length, []);
   const completedFields = useMemo(() => Object.values(formData).filter((v) => v !== undefined).length, [formData]);
   const progressPercentage = useMemo(() => (totalFields > 0 ? (completedFields / totalFields) * 100 : 0), [completedFields, totalFields]);
@@ -293,6 +302,28 @@ export default function Predict(): React.ReactElement {
             const pdfBlob = base64ToBlob(data.pdf, "application/pdf");
             setPdfUrl(URL.createObjectURL(pdfBlob));
             toast.success("Report generated successfully!");
+
+            // --- Save to Convex Database (NEW LOGIC) ---
+            const userId = localStorage.getItem("userId");
+            if (!userId) {
+              toast.error("Could not find userId in localStorage. Report not saved.");
+            } else if (response && "prediction_label" in response) {
+              try {
+                // Call the Convex action to save everything
+                await saveReport({
+                  userId: userId as Id<"users">,
+                  patientDetails,
+                  formData,
+                  predictionResult: response,
+                  pdfBase64: data.pdf, // Pass the raw base64 string
+                });
+                toast.success("Report details saved to the database!");
+              } catch (error) {
+                console.error("Failed to save report to Convex:", error);
+                toast.error("Could not save report to the database.");
+              }
+            }
+            // ------------------------------------------
           }
           setIsReportLoading(false);
           setJobId(null);
@@ -315,7 +346,7 @@ export default function Predict(): React.ReactElement {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [jobId]);
+  }, [jobId, response, patientDetails, formData, saveReport]); // Added dependencies
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -383,8 +414,7 @@ export default function Predict(): React.ReactElement {
           <main className="lg:col-span-3">
             <form onSubmit={handleSubmit} className="space-y-8" noValidate>
               {categoryList.map(category => {
-                // FIX: Assign component to capitalized variable before rendering
-                const Icon = categoryIcons[category]; 
+                const Icon = categoryIcons[category];
                 return currentCategory === category && (
                   <section key={category} className="bg-white rounded-xl shadow-lg p-8 ring-2 ring-blue-500">
                     <div className="flex items-center gap-3 mb-6">
