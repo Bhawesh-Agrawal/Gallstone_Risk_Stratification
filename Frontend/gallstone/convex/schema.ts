@@ -27,4 +27,15 @@ export default defineSchema({
     pdfStorageId: v.id("_storage"),
   })
     .index("by_userId", ["userId"]),
+
+  conversations: defineTable({
+    userId: v.string(),
+    title: v.string(),
+    history: v.array(v.object({
+      role: v.union(v.literal("user"), v.literal("assistant")),
+      content: v.string(),
+    })),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_userId", ["userId"]),
 });
