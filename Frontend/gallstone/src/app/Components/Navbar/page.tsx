@@ -5,7 +5,6 @@ import {
   User,
   Menu,
   X,
-  Activity,
   MessageCircle,
   FileText,
   LogIn,
@@ -83,10 +82,13 @@ export default function Navbar() {
       <nav className="bg-white shadow-lg border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
+            {/* Updated Logo for Loading State */}
             <a href="/" className="flex items-center space-x-2">
-              <div className="bg-blue-600 p-2 rounded-lg">
-                <Activity className="h-6 w-6 text-white" />
-              </div>
+              <img
+                src="/logo.png"
+                alt="Gallitify Logo"
+                className="h-10 w-auto"
+              />
               <span className="text-2xl font-bold text-gray-800">
                 Galli<span className="text-blue-600">tify</span>
               </span>
@@ -105,11 +107,13 @@ export default function Navbar() {
     <nav className="bg-white shadow-lg border-b border-gray-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo */}
+          {/* Updated Logo */}
           <a href="/" className="flex items-center space-x-2">
-            <div className="bg-blue-600 p-2 rounded-lg">
-              <Activity className="h-6 w-6 text-white" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="Gallitify Logo"
+              className="h-10 w-auto"
+            />
             <span className="text-2xl font-bold text-gray-800">
               Galli<span className="text-blue-600">tify</span>
             </span>
@@ -220,7 +224,11 @@ export default function Navbar() {
               className="text-gray-700 hover:text-blue-600 p-2 transition-colors duration-200"
               aria-expanded={isMenuOpen}
             >
-              {isMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              {isMenuOpen ? (
+                <X className="h-6 w-6" />
+              ) : (
+                <Menu className="h-6 w-6" />
+              )}
             </button>
           </div>
         </div>
