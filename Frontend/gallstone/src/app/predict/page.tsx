@@ -242,7 +242,9 @@ export default function Predict(): React.ReactElement {
     return new Blob(byteArrays, { type: mimeType });
   };
 
-  const handleGenerateReport = async () => {
+  // in Predict.tsx
+
+ const handleGenerateReport = async () => {
     if (!response || "error" in response) {
       toast.error("A successful prediction is required to generate a report.");
       return;
@@ -258,7 +260,9 @@ export default function Predict(): React.ReactElement {
     toast.info("Report generation started in the background...");
 
     try {
-      const payload = { ...response, patientDetails };
+      // THE FIX IS HERE: Added 'formData' to the payload object
+      const payload = { ...response, patientDetails, formData };
+
       const res = await fetch("/api/generate-report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

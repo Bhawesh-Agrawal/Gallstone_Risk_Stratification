@@ -6,13 +6,14 @@ import { randomUUID } from "crypto";
 // 1. IN-MEMORY JOB STORE & TYPES
 // =================================================================================
 
-// NEW: Added patientDetails to the request interface
+// MODIFIED: Added formData to the request interface
 interface ReportRequest {
   patientDetails: {
     name: string;
     address: string;
     phone: string;
   };
+  formData: Record<string, number>; // All the medical form data
   prediction_label: "Positive" | "Negative";
   probability: { "positive (class 0)": string; "negative (class 1)": string };
   shap_analysis: {
@@ -32,14 +33,23 @@ interface Job {
 
 const jobStore = new Map<string, Job>();
 
+// NEW: Copied from frontend to structure the input data section in the PDF
+const fieldCategories = {
+  "Basic Information": ["Age", "Gender", "Height", "Weight"],
+  "Medical History": ["Comorbidity", "Coronary Artery Disease (CAD)", "Hypothyroidism", "Hyperlipidemia", "Diabetes Mellitus (DM)", "Hepatic Fat Accumulation (HFA)"],
+  "Body Composition": ["Body Mass Index (BMI)", "Total Body Water (TBW)", "Extracellular Water (ECW)", "Intracellular Water (ICW)", "Extracellular Fluid/Total Body Water (ECF/TBW)", "Total Body Fat Ratio (TBFR) (%)", "Lean Mass (LM) (%)", "Body Protein Content (Protein) (%)", "Visceral Fat Rating (VFR)", "Bone Mass (BM)", "Muscle Mass (MM)", "Obesity (%)", "Total Fat Content (TFC)", "Visceral Fat Area (VFA)", "Visceral Muscle Area (VMA) (Kg)"],
+  "Laboratory Tests": ["Glucose", "Total Cholesterol (TC)", "Low Density Lipoprotein (LDL)", "High Density Lipoprotein (HDL)", "Triglyceride", "Aspartat Aminotransferaz (AST)", "Alanin Aminotransferaz (ALT)", "Alkaline Phosphatase (ALP)", "Creatinine", "Glomerular Filtration Rate (GFR)", "C-Reactive Protein (CRP)", "Hemoglobin (HGB)", "Vitamin D"],
+};
+
+
 // =================================================================================
 // 2. CORE LOGIC (Gemini API Call and PDF Generation)
 // =================================================================================
 
 const generateMarkdownReport = async (data: ReportRequest): Promise<string> => {
   const { prediction_label, probability, shap_analysis } = data;
-  
-  // UPDATED: The prompt no longer needs the instruction to include the plot image.
+
+  // MODIFIED: Slightly adjusted prompt for more structured Markdown output.
   const prompt = `
     Please act as a medical data analyst. Generate a comprehensive but easy-to-understand report in Markdown format based on the following gallstone risk prediction data.
 
@@ -56,11 +66,12 @@ const generateMarkdownReport = async (data: ReportRequest): Promise<string> => {
       ${Object.entries(shap_analysis.top_contributors_to_negative).map(([key, value]) => `- **${key}**: ${value}`).join("\n")}
 
     **Instructions for the report:**
-    1.  Start with a clear summary of the prediction.
-    2.  Explain what SHAP values mean in simple terms.
-    3.  Discuss the "Top contributors to positive" and explain why they might increase the risk.
-    4.  Discuss the "Top contributors to negative" and explain why they might be protective.
-    5.  Conclude with a general disclaimer that this is not medical advice.
+    1.  Start with a title: "# Gallstone Risk Analysis Report".
+    2.  Create a section "## Prediction Summary". Summarize the prediction outcome and probabilities.
+    3.  Create a section "## Understanding SHAP Values". Explain SHAP in simple terms.
+    4.  Create a section "## Factors Increasing Gallstone Risk". Discuss the "Top contributors to positive" and explain the medical reasons why they might increase the risk.
+    5.  Create a section "## Factors Decreasing Gallstone Risk". Discuss the "Top contributors to negative" and explain why they might be protective.
+    6.  Conclude with a final section "## Disclaimer" stating this is not medical advice.
   `;
 
   const controller = new AbortController();
@@ -92,118 +103,206 @@ const generateMarkdownReport = async (data: ReportRequest): Promise<string> => {
   }
 };
 
-// ⭐ REVAMPED PDF GENERATION - Now handles bold text, patient details, and embeds the plot image ⭐
+// ⭐ COMPLETELY REVAMPED PDF GENERATION FUNCTION ⭐
 const generatePdfFromMarkdown = async (markdown: string, data: ReportRequest): Promise<string> => {
-  const { patientDetails, shap_analysis } = data;
-  const doc = new jsPDF();
-  const margin = 15;
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const usableWidth = pageWidth - 2 * margin;
-  let yPosition = margin;
+    const { patientDetails, shap_analysis, formData, prediction_label } = data;
+    const doc = new jsPDF();
+    
+    // --- Document Setup ---
+    const margin = 15;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const usableWidth = pageWidth - 2 * margin;
+    let yPosition = margin;
+    let pageNumber = 1;
 
-  // --- Add Patient Details Header ---
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(18);
-  doc.text("Gallstone Risk Analysis Report", pageWidth / 2, yPosition, { align: "center" });
-  yPosition += 10;
-  
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  doc.text(`Patient Name: ${patientDetails.name}`, margin, yPosition);
-  yPosition += 7;
-  doc.text(`Address: ${patientDetails.address}`, margin, yPosition);
-  yPosition += 7;
-  doc.text(`Phone: ${patientDetails.phone}`, margin, yPosition);
-  yPosition += 10;
-  doc.line(margin, yPosition, pageWidth - margin, yPosition); // Horizontal line
-  yPosition += 10;
-
-  // --- Function to add text and handle page breaks ---
-  const addText = (text: string, options: { isBold?: boolean } = {}) => {
-    doc.setFont("helvetica", options.isBold ? "bold" : "normal");
-    const lines = doc.splitTextToSize(text, usableWidth);
-    const textHeight = doc.getTextDimensions(lines).h;
-    if (yPosition + textHeight > doc.internal.pageSize.getHeight() - margin) {
-      doc.addPage();
-      yPosition = margin;
-    }
-    doc.text(lines, margin, yPosition);
-    yPosition += textHeight + 4; // Spacing
-  };
-
-  // --- Parse Markdown and Add to PDF ---
-  const mdLines = markdown.split('\n');
-  for (const line of mdLines) {
-    if (line.startsWith('## ')) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(16);
-      addText(line.replace('## ', ''));
-    } else if (line.startsWith('# ')) {
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(20);
-      addText(line.replace('# ', ''));
-    } else if (line.trim().startsWith('* ')) {
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(12);
-      // Handle bold within list items
-      const itemText = line.trim().substring(2).replace(/\*\*(.*?)\*\*/g, '$1'); // Simplified for now
-      addText(`• ${itemText}`);
-    } else if (line.trim().length > 0) {
-      // FIX: Handle **bold** text within paragraphs
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(12);
-      const parts = line.split(/\*\*(.*?)\*\*/g); // Split by bold tags
-      let currentX = margin;
-      
-      if (yPosition + 10 > doc.internal.pageSize.getHeight() - margin) {
-          doc.addPage();
-          yPosition = margin;
-      }
-      
-      parts.forEach((part, index) => {
-        if (part) {
-          const isBold = index % 2 === 1;
-          doc.setFont("helvetica", isBold ? "bold" : "normal");
-          doc.text(part, currentX, yPosition);
-          currentX += doc.getStringUnitWidth(part) * doc.getFontSize();
+    // --- Helper Functions ---
+    const checkPageBreak = (heightNeeded: number = 10) => {
+        if (yPosition + heightNeeded > pageHeight - margin) {
+            addFooter();
+            doc.addPage();
+            pageNumber++;
+            yPosition = margin;
         }
-      });
-      yPosition += 7; // Move to next line
-    }
-  }
+    };
+    
+    const addFooter = () => {
+        const footerY = pageHeight - 10;
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text(
+            `Disclaimer: This report is for informational purposes only. Consult a healthcare professional for medical advice.`,
+            margin,
+            footerY,
+            { maxWidth: usableWidth }
+        );
+        doc.text(`Page ${pageNumber}`, pageWidth - margin, footerY, { align: "right" });
+    };
 
-  // --- Fetch and Embed SHAP Plot Image ---
-  try {
-    yPosition += 5;
+    const addSectionTitle = (title: string) => {
+        checkPageBreak(20);
+        yPosition += 10;
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(40, 52, 140); // Dark blue color
+        doc.text(title, margin, yPosition);
+        yPosition += 2;
+        doc.setDrawColor(40, 52, 140);
+        doc.line(margin, yPosition, margin + usableWidth, yPosition);
+        yPosition += 10;
+    };
+
+    const addStyledText = (text: string) => {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(80);
+
+        const lines = doc.splitTextToSize(text.replace(/•\s/g, ''), usableWidth - (text.startsWith('•') ? 5 : 0));
+        
+        lines.forEach((line: string, index: number) => {
+            checkPageBreak(5);
+            const xPos = margin + (text.startsWith('•') ? 5 : 0);
+            if (index === 0 && text.startsWith('•')) {
+                 doc.setFont("helvetica", "bold");
+                 doc.text("•", margin, yPosition);
+                 doc.setFont("helvetica", "normal");
+            }
+            doc.text(line, xPos, yPosition);
+            yPosition += 5;
+        });
+        yPosition += 3; // Extra space after paragraph/item
+    };
+    
+    // --- 1. Report Header ---
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(16);
-    addText("SHAP Waterfall Plot");
-    
-    const imageUrl = shap_analysis.plots.waterfall_plot;
-    const imageResponse = await fetch(imageUrl);
-    const imageBuffer = await imageResponse.arrayBuffer();
-    const imageBase64 = Buffer.from(imageBuffer).toString('base64');
-    
-    // Assuming the plot is PNG, you might need to adjust if it's JPG
-    const imageFormat = 'PNG'; 
-    const imgProps = doc.getImageProperties(imageBase64);
-    const imgWidth = usableWidth;
-    const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+    doc.setFontSize(18);
+    doc.setTextColor(0);
+    doc.text("Confidential Medical Report", pageWidth / 2, yPosition, { align: "center" });
+    yPosition += 8;
+    doc.setFontSize(14);
+    doc.setTextColor(100);
+    doc.text("Gallstone Risk Prediction Analysis", pageWidth / 2, yPosition, { align: "center" });
+    yPosition += 12;
 
-    if (yPosition + imgHeight > doc.internal.pageSize.getHeight() - margin) {
-      doc.addPage();
-      yPosition = margin;
+    doc.setDrawColor(200);
+    doc.line(margin, yPosition, pageWidth - margin, yPosition);
+    yPosition += 10;
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("Patient Name:", margin, yPosition);
+    doc.setFont("helvetica", "normal");
+    doc.text(patientDetails.name, margin + 40, yPosition);
+    yPosition += 6;
+    doc.setFont("helvetica", "bold");
+    doc.text("Address:", margin, yPosition);
+    doc.setFont("helvetica", "normal");
+    doc.text(patientDetails.address, margin + 40, yPosition);
+    yPosition += 6;
+    doc.setFont("helvetica", "bold");
+    doc.text("Phone:", margin, yPosition);
+    doc.setFont("helvetica", "normal");
+    doc.text(patientDetails.phone, margin + 40, yPosition);
+    yPosition += 6;
+    doc.setFont("helvetica", "bold");
+    doc.text("Report Date:", margin, yPosition);
+    doc.setFont("helvetica", "normal");
+    doc.text(new Date().toLocaleDateString('en-GB'), margin + 40, yPosition);
+
+    // --- 2. Prediction Summary ---
+    addSectionTitle("Prediction Summary");
+    const isPositive = prediction_label === 'Positive';
+    const summaryColor = isPositive ? [217, 48, 30] : [22, 163, 74];
+    const summaryBg = isPositive ? [254, 226, 226] : [220, 252, 231];
+    doc.setFillColor(summaryBg[0], summaryBg[1], summaryBg[2]);
+    doc.rect(margin, yPosition, usableWidth, 20, 'F');
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(summaryColor[0], summaryColor[1], summaryColor[2]);
+    doc.text(`Prediction: ${prediction_label} for Gallstones`, pageWidth / 2, yPosition + 12, { align: "center" });
+    yPosition += 25;
+
+    // --- 3. Input Data Summary (NEW SECTION) ---
+    addSectionTitle("Patient Data Summary");
+    doc.setFontSize(10);
+    const columnWidth = usableWidth / 3;
+    let currentX = margin;
+    let startY = yPosition;
+    let maxY = yPosition;
+
+    Object.entries(fieldCategories).forEach(([category, fields]) => {
+        checkPageBreak(8 + fields.length * 5);
+        yPosition += 3;
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(40, 52, 140);
+        doc.text(category, currentX, yPosition);
+        yPosition += 6;
+
+        (fields as string[]).forEach((field) => {
+            checkPageBreak(5);
+            const value = formData[field as keyof typeof formData];
+            let displayValue = "N/A";
+            if (value !== undefined) {
+                if (["Gender", "Comorbidity", "Coronary Artery Disease (CAD)", "Hypothyroidism", "Hyperlipidemia", "Diabetes Mellitus (DM)", "Hepatic Fat Accumulation (HFA)"].includes(field)){
+                     displayValue = value === 1 ? 'Yes' : 'No';
+                     if (field === 'Gender') displayValue = value === 1 ? 'Female' : 'Male';
+                } else {
+                     displayValue = String(value);
+                }
+            }
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(80);
+            doc.text(`${field}:`, currentX, yPosition);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(0);
+            doc.text(displayValue, currentX + 60, yPosition);
+            yPosition += 5;
+        });
+    });
+
+    // --- 4. Detailed AI Analysis ---
+    const markdownSections = markdown.split('## ').filter(s => s.trim());
+    markdownSections.forEach(section => {
+        const lines = section.split('\n').filter(l => l.trim());
+        const title = lines.shift() || 'Details';
+        const content = lines.join('\n').replace(/\*\*/g, ''); // Simple bold removal for now
+        addSectionTitle(title);
+        content.split('\n').forEach(paragraph => {
+            if (paragraph.trim()) {
+                 addStyledText(paragraph.trim());
+            }
+        });
+    });
+
+    // --- 5. SHAP Waterfall Plot ---
+    try {
+        addSectionTitle("SHAP Waterfall Plot");
+        addStyledText("This plot shows the specific impact of each top feature on this patient's risk prediction. Features in red increase the predicted risk, while those in blue decrease it.");
+        
+        const imageUrl = shap_analysis.plots.waterfall_plot;
+        const imageResponse = await fetch(imageUrl);
+        const imageBuffer = await imageResponse.arrayBuffer();
+        const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+        const imageFormat = 'PNG';
+        const imgProps = doc.getImageProperties(imageBase64);
+        
+        const imgWidth = usableWidth;
+        const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+        checkPageBreak(imgHeight + 10);
+        doc.addImage(imageBase64, imageFormat, margin, yPosition, imgWidth, imgHeight);
+
+    } catch (e) {
+        console.error("Failed to embed plot image:", e);
+        addStyledText("Error: The SHAP plot image could not be loaded and embedded.");
     }
     
-    doc.addImage(imageBase64, imageFormat, margin, yPosition, imgWidth, imgHeight);
+    // --- Final Footer ---
+    addFooter();
 
-  } catch(e) {
-      console.error("Failed to embed plot image:", e);
-      addText("Error: The SHAP plot image could not be loaded and embedded.", { isBold: true });
-  }
-
-  return Buffer.from(doc.output('arraybuffer')).toString("base64");
+    return Buffer.from(doc.output('arraybuffer')).toString("base64");
 };
+
 
 // =================================================================================
 // 3. BACKGROUND JOB PROCESSOR
@@ -212,7 +311,6 @@ const generatePdfFromMarkdown = async (markdown: string, data: ReportRequest): P
 async function processReport(jobId: string, data: ReportRequest) {
   try {
     const markdownContent = await generateMarkdownReport(data);
-    // Pass the full data object to the PDF generator
     const pdfBase64 = await generatePdfFromMarkdown(markdownContent, data);
     jobStore.set(jobId, { status: "complete", pdf: pdfBase64 });
   } catch (error) {
@@ -228,12 +326,17 @@ async function processReport(jobId: string, data: ReportRequest) {
 export async function POST(req: NextRequest) {
   try {
     const data: ReportRequest = await req.json();
+    // Basic validation
+    if (!data.patientDetails || !data.formData || !data.prediction_label) {
+        throw new Error("Invalid request body. Missing required fields.");
+    }
     const jobId = randomUUID();
     jobStore.set(jobId, { status: "pending" });
     processReport(jobId, data);
     return NextResponse.json({ jobId }, { status: 202 });
   } catch (error) {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    const message = error instanceof Error ? error.message : "Invalid request body.";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
