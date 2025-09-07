@@ -310,7 +310,7 @@ export default function Predict(): React.ReactElement {
             // --- Save to Convex Database (NEW LOGIC) ---
             const userId = localStorage.getItem("userId");
             if (!userId) {
-              toast.error("Could not find userId in localStorage. Report not saved.");
+              toast.error("You are not signed in! Sign In to save report");
             } else if (response && "prediction_label" in response) {
               try {
                 // Call the Convex action to save everything
