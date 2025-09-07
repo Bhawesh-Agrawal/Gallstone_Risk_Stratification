@@ -47,7 +47,7 @@ Key components:
 ### 1. Clone the repository
 
 ```
-git clone https://github.com/your-username/gallstone-prediction.git
+git clone https://github.com/Bhawesh-Agrawal/Gallstone_Risk_Stratification.git
 cd gallstone-prediction
 ```
 
